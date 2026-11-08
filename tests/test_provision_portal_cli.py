@@ -695,6 +695,8 @@ class ShizukuCliTest(unittest.TestCase):
             with (
                 mock.patch.object(provisioner, "connect"),
                 mock.patch.object(provisioner, "verify_target"),
+                mock.patch.object(provisioner, "adb_framework_boot_preflight", return_value=False),
+                mock.patch.object(provisioner, "adb_run") as adb_run,
                 mock.patch("provision_portal.android_build_environment", return_value={}),
                 mock.patch.object(
                     provisioner,
@@ -708,6 +710,7 @@ class ShizukuCliTest(unittest.TestCase):
                 with self.assertRaisesRegex(ProvisionError, "host computer"):
                     provisioner.provision()
 
+            adb_run.assert_not_called()
             reboot.assert_not_called()
 
 
