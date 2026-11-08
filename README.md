@@ -65,13 +65,19 @@ Persistent features use focused configuration changes or small boot helpers.
 
 ### Host computer
 
-- Linux x86_64 with Git, GNU Make, Python 3.9 or newer and Android Debug Bridge (`adb`)
+- Linux x86_64, or macOS on Apple silicon/Intel, with Git, GNU Make, `unzip`,
+  Python 3.9 or newer and Android Debug Bridge (`adb`)
 - Android NDK r28.2 (`28.2.13676358`)
-- A JDK plus Android SDK Platform 36 and Build Tools containing `aapt`, `zipalign`, `apksigner` and `d8`
+- A working JDK (17 recommended) plus Android SDK Platform 36 and Build Tools
+  37.0.0 containing `aapt`, `zipalign`, `apksigner` and `d8`
 - A USB data cable for initial stock-device setup
 - Internet access when Kiosk Satellite or the pinned Shizuku APK must be downloaded
 
 The provisioner uses only the Python standard library.
+
+For native macOS setup and offline build instructions, see
+[macOS builds](docs/macos.md). Host support does not expand the exact model
+and firmware list under [Supported models](#supported-models).
 
 ### Portal
 
@@ -131,7 +137,10 @@ adb shell uname -a
 
 Install the tools listed under [Requirements](#requirements), then clone the
 repository. The provisioner automatically finds an SDK installed at
-`$HOME/Android/Sdk` or `$HOME/android-sdk`.
+`$HOME/Android/Sdk`, `$HOME/Android/sdk` or `$HOME/android-sdk`. On macOS,
+`$HOME/Library/Android/sdk` is searched first. Explicit SDK variables take
+precedence over these defaults. SDK, NDK and JDK paths may contain spaces;
+see the macOS guide for the remaining host-build path constraint.
 
 ```sh
 git clone https://github.com/jxlarrea/portal-root-kiosk-satellite.git

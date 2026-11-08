@@ -1,0 +1,63 @@
+name: Host builds
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, python: '3.9'}
+          - {os: macos-15, python: '3.11'}
+          - {os: macos-15-intel, python: '3.11'}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Offline tests
+        run: python3 -m unittest discover -s tests -q
+      - name: Install pinned Android tools
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" "platforms;android-36" \
+            "build-tools;37.0.0" "ndk;28.2.13676358"
+          # Exercise real builds with spaces in SDK, NDK and JDK paths.
+          ln -s "$ANDROID_HOME" "$RUNNER_TEMP/Android SDK"
+          ln -s "$JAVA_HOME" "$RUNNER_TEMP/Java Home"
+          {
+            echo "SDK=$RUNNER_TEMP/Android SDK"
+            echo "NDK=$RUNNER_TEMP/Android SDK/ndk/28.2.13676358"
+            echo "JAVA_HOME=$RUNNER_TEMP/Java Home"
+          } >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+      - name: Build all payloads and helpers
+        run: |
+          for target in \
+            portal-terry-5051355900018050 portal-aloha-1041515800015050 \
+            portal-cipher-4051355900018050 portal-omni-3051355900018050 \
+            portal-ripley-2041515800015050; do
+            make -C exploit "$target"
+          done
+          make -C exploit-sentinel
+          make -C helper all native-java
+          make -C exploit PORTAL_TARGET=portal-aloha-1041515800015050 \
+            audio-ctl account-ctl component-ctl
+          make -C presence-helper
+          make -C shizuku-helper
+          make -C uid1000-helper all aloha

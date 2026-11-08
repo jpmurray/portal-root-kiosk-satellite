@@ -13,17 +13,17 @@ all: $(APK)
 
 $(APK): AndroidManifest.xml $(SOURCES) $(KEYSTORE)
 	mkdir -p $(BUILD) $(CLASSES) $(DEX)
-	$(BUILD_TOOLS)/aapt package -f -M AndroidManifest.xml \
-		-I $(ANDROID_JAR) -F $(UNSIGNED)
-	javac -source 8 -target 8 -cp $(ANDROID_JAR) -d $(CLASSES) $(SOURCES)
+	"$(BUILD_TOOLS)/aapt" package -f -M AndroidManifest.xml \
+		-I "$(ANDROID_JAR)" -F $(UNSIGNED)
+	javac -source 8 -target 8 -cp "$(ANDROID_JAR)" -d $(CLASSES) $(SOURCES)
 	cd $(CLASSES) && jar cf ../portal-shizuku-helper-classes.jar .
-	$(BUILD_TOOLS)/d8 --min-api 24 --output $(DEX) \
+	"$(D8)" --min-api 24 --output $(DEX) \
 		$(BUILD)/portal-shizuku-helper-classes.jar
-	cd $(DEX) && $(BUILD_TOOLS)/aapt add ../portal-shizuku-helper-unsigned.apk classes.dex
-	$(BUILD_TOOLS)/zipalign -f 4 $(UNSIGNED) $(ALIGNED)
-	$(BUILD_TOOLS)/apksigner sign --ks $(KEYSTORE) --ks-pass pass:android \
+	cd $(DEX) && "$(BUILD_TOOLS)/aapt" add ../portal-shizuku-helper-unsigned.apk classes.dex
+	"$(BUILD_TOOLS)/zipalign" -f 4 $(UNSIGNED) $(ALIGNED)
+	"$(BUILD_TOOLS)/apksigner" sign --ks $(KEYSTORE) --ks-pass pass:android \
 		--key-pass pass:android --out $(APK) $(ALIGNED)
-	$(BUILD_TOOLS)/apksigner verify --verbose $(APK)
+	"$(BUILD_TOOLS)/apksigner" verify --verbose $(APK)
 
 $(KEYSTORE):
 	mkdir -p $(dir $(KEYSTORE))

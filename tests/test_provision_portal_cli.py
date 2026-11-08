@@ -348,7 +348,7 @@ class AndroidBuildEnvironmentTest(unittest.TestCase):
 
     def test_explicit_sdk_root_is_propagated_to_make(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            sdk = pathlib.Path(temporary) / "sdk"
+            sdk = pathlib.Path(temporary).resolve() / "sdk"
             ndk = sdk / "ndk" / "28.2.13676358"
             toolchain = ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin"
             build_tools = sdk / "build-tools" / "37.0.0"
@@ -373,6 +373,9 @@ class AndroidBuildEnvironmentTest(unittest.TestCase):
                     clear=True,
                 ),
                 mock.patch.object(shutil, "which", return_value="/usr/bin/tool"),
+                mock.patch(
+                    "provision_portal.ndk_host_tag", return_value="linux-x86_64"
+                ),
             ):
                 environment = android_build_environment()
 
@@ -692,6 +695,7 @@ class ShizukuCliTest(unittest.TestCase):
             with (
                 mock.patch.object(provisioner, "connect"),
                 mock.patch.object(provisioner, "verify_target"),
+                mock.patch("provision_portal.android_build_environment", return_value={}),
                 mock.patch.object(
                     provisioner,
                     "resolve_shizuku_apk",

@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import pathlib
+import platform
 import re
 import select
 import shlex
@@ -3891,17 +3892,15 @@ class PortalProvisioner:
             for name in ("ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "NDK"):
                 value = os.environ.get(name)
                 if value:
-                    roots.append(pathlib.Path(value))
+                    roots.append(pathlib.Path(value).expanduser())
             for name in ("ANDROID_SDK_ROOT", "ANDROID_HOME"):
                 value = os.environ.get(name)
                 if value:
-                    roots.append(pathlib.Path(value) / "ndk")
-            roots.extend(
-                (
-                    pathlib.Path.home() / "android-sdk/ndk",
-                    pathlib.Path.home() / "Android/Sdk/ndk",
-                )
-            )
+                    roots.append(pathlib.Path(value).expanduser() / "ndk")
+            home = pathlib.Path.home()
+            roots.extend((home / "android-sdk/ndk", home / "Android/Sdk/ndk"))
+            if platform.system() == "Darwin":
+                roots.append(home / "Library/Android/sdk/ndk")
             candidates: list[pathlib.Path] = []
             for root in roots:
                 if (root / "simpleperf/bin/android/arm64/simpleperf").is_file():
@@ -7637,27 +7636,43 @@ class PortalProvisioner:
         raise ProvisionError(f"provisioning failed after {self.attempts} attempts")
 
 
+def android_sdk_directory(environment: dict[str, str]) -> pathlib.Path:
+    """Resolve SDK defaults consistently with android-env.mk."""
+    explicit = (
+        environment.get("SDK")
+        or environment.get("ANDROID_SDK_ROOT")
+        or environment.get("ANDROID_HOME")
+    )
+    if explicit:
+        return pathlib.Path(explicit).expanduser().resolve()
+    home = pathlib.Path.home()
+    candidates = [home / "Android/Sdk", home / "Android/sdk", home / "android-sdk"]
+    if platform.system() == "Darwin":
+        candidates.insert(0, home / "Library/Android/sdk")
+    return next((path for path in candidates if path.is_dir()), candidates[0])
+
+
+def ndk_host_tag() -> str:
+    system, machine = platform.system(), platform.machine().lower()
+    if system == "Darwin" and machine in {"arm64", "aarch64", "x86_64"}:
+        # Google's Darwin package contains Apple silicon and Intel binaries.
+        return "darwin-x86_64"
+    if system == "Linux" and machine in {"x86_64", "amd64"}:
+        return "linux-x86_64"
+    raise ProvisionError(
+        f"unsupported build host: {system} {machine}; "
+        "use macOS (Apple silicon/Intel) or Linux x86_64"
+    )
+
+
 def android_build_environment(
     target: PortalTarget | None = None,
 ) -> dict[str, str]:
-    """Resolve and validate the per-user Android toolchain."""
+    """Resolve and validate the native Linux or macOS Android toolchain."""
     environment = dict(os.environ)
 
-    sdk_value = environment.get("ANDROID_SDK_ROOT") or environment.get(
-        "ANDROID_HOME"
-    )
-    if sdk_value:
-        sdk = pathlib.Path(sdk_value).expanduser()
-    else:
-        sdk_candidates = (
-            pathlib.Path.home() / "Android/Sdk",
-            pathlib.Path.home() / "Android/sdk",
-            pathlib.Path.home() / "android-sdk",
-        )
-        sdk = next(
-            (candidate for candidate in sdk_candidates if candidate.is_dir()),
-            sdk_candidates[0],
-        )
+    sdk = android_sdk_directory(environment)
+    host_tag = environment.get("NDK_HOST_TAG") or ndk_host_tag()
 
     ndk_value = next(
         (
@@ -7668,7 +7683,7 @@ def android_build_environment(
         None,
     )
     ndk = (
-        pathlib.Path(ndk_value).expanduser()
+        pathlib.Path(ndk_value).expanduser().resolve()
         if ndk_value
         else sdk / "ndk" / ANDROID_NDK_VERSION
     )
@@ -7677,15 +7692,24 @@ def android_build_environment(
             "BUILD_TOOLS",
             str(sdk / "build-tools" / ANDROID_BUILD_TOOLS_VERSION),
         )
-    ).expanduser()
+    ).expanduser().resolve()
     android_jar = pathlib.Path(
         environment.get(
             "ANDROID_JAR",
             str(sdk / "platforms" / ANDROID_PLATFORM_VERSION / "android.jar"),
         )
-    ).expanduser()
-    d8 = pathlib.Path(environment.get("D8", str(build_tools / "d8"))).expanduser()
-    toolchain_bin = ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin"
+    ).expanduser().resolve()
+    d8 = pathlib.Path(environment.get("D8", str(build_tools / "d8"))).expanduser().resolve()
+    toolchain = pathlib.Path(
+        environment.get("TOOLCHAIN", str(ndk / "toolchains/llvm/prebuilt" / host_tag))
+    ).expanduser().resolve()
+    toolchain_bin = toolchain / "bin"
+    if environment.get("JAVA_HOME"):
+        java_home = pathlib.Path(environment["JAVA_HOME"]).expanduser().resolve()
+        environment["JAVA_HOME"] = str(java_home)
+        environment["PATH"] = (
+            str(java_home / "bin") + os.pathsep + environment.get("PATH", os.defpath)
+        )
 
     required_paths = {
         "Android NDK arm64 compiler": (
@@ -7715,7 +7739,7 @@ def android_build_environment(
     missing_commands = [
         command
         for command in ("make", "javac", "jar", "keytool")
-        if shutil.which(command) is None
+        if shutil.which(command, path=environment.get("PATH")) is None
     ]
     if missing_paths or missing_commands:
         details = missing_paths + [
@@ -7735,6 +7759,8 @@ def android_build_environment(
             "ANDROID_SDK_ROOT": str(sdk),
             "NDK": str(ndk),
             "ANDROID_NDK_HOME": str(ndk),
+            "NDK_HOST_TAG": host_tag,
+            "TOOLCHAIN": str(toolchain),
             "BUILD_TOOLS": str(build_tools),
             "ANDROID_JAR": str(android_jar),
             "D8": str(d8),
